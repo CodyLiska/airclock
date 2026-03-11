@@ -12,6 +12,9 @@ config.json
 # Local systemd service
 airclock.service
 
+# Claude Code
+CLAUDE.md
+
 # OS
 .DS_Store
 Thumbs.db
