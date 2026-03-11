@@ -1,0 +1,13 @@
+[Unit]
+Description=Airclock
+After=multi-user.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/YOUR_USER/airclock/airclock_ui.py
+WorkingDirectory=/home/YOUR_USER/airclock
+Restart=on-failure
+User=YOUR_USER
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

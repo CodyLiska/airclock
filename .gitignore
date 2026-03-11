@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Config
+config.json
+
+# Local systemd service
+airclock.service
+
+# OS
+.DS_Store
+Thumbs.db
