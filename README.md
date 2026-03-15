@@ -125,13 +125,13 @@ Settings (alarm time, Pomodoro durations) are saved to `config.json` when you ch
 
 ## Hardware Tests
 
-Individual component test scripts are in `airclock-docs/`:
+Individual component test scripts are in `tests/`:
 
 ```bash
-python3 airclock-docs/display_test.py   # SPI display
-python3 airclock-docs/encoder_test.py   # Rotary encoder
-python3 scd40_test.py                   # SCD40 sensor
-python3 audio_test.py                   # Audio output
+python3 tests/display_test.py   # SPI display
+python3 tests/encoder_test.py   # Rotary encoder
+python3 tests/scd40_test.py     # SCD40 sensor
+python3 tests/audio_test.py     # Audio output
 ```
 
 ## License

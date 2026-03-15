@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import time
 from datetime import datetime, timedelta
@@ -8,14 +9,43 @@ from threading import Thread, Lock
 from gpiozero import RotaryEncoder, Button
 from luma.core.interface.serial import spi
 from luma.lcd.device import ili9341
-from luma.core.render import canvas
-from PIL import ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 from sensirion_i2c_driver import LinuxI2cTransceiver, I2cConnection
 from sensirion_i2c_scd import Scd4xI2cDevice
 
+# For backgrounds with solid colors
+# from luma.core.render import canvas
+
 # ---------- Paths ----------
-CONFIG_PATH = Path(__file__).parent / "config.json"
+BASE_PATH   = Path(os.environ.get("AIRCLOCK_BASE", Path(__file__).parent))
+CONFIG_PATH = BASE_PATH / "config.json"
+
+# ---------- Themes ----------
+def _discover_themes():
+    bg_dir = BASE_PATH / "background"
+    if bg_dir.exists():
+        return sorted(d.name for d in bg_dir.iterdir() if d.is_dir())
+    return ["futuristic"]
+
+THEMES = _discover_themes()
+current_theme = THEMES[0] if THEMES else "futuristic"
+theme_text_color = "white"
+theme_shadow_color = "black"
+
+
+def load_theme_colors(theme):
+    global theme_text_color, theme_shadow_color
+    theme_text_color = "white"
+    theme_shadow_color = "black"
+    theme_json = BASE_PATH / "background" / theme / "theme.json"
+    if theme_json.exists():
+        try:
+            data = json.loads(theme_json.read_text())
+            theme_text_color = data.get("text_color", "white")
+            theme_shadow_color = data.get("shadow_color", "black")
+        except Exception:
+            pass
 
 # ---------- Display ----------
 serial = spi(port=0, device=0, gpio_DC=25, gpio_RST=24)
@@ -32,12 +62,35 @@ def load_font(path, size):
 FONT_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
+
+def load_backgrounds(theme="futuristic"):
+    bg_dir = BASE_PATH / "background" / theme
+    def _open(name):
+        img = Image.open(bg_dir / name).convert("RGB")
+        if img.size != device.size:
+            img = img.resize(device.size, Image.LANCZOS)
+        return img
+    return _open("home.png"), _open("alarm.png"), _open("pomodoro.png"), _open("air.png")
+
+
+BG_HOME, BG_ALARM, BG_POMODORO, BG_AIR = load_backgrounds()
+load_theme_colors(current_theme)
+
 font_small = load_font(FONT_REG, 11)
 font_body = load_font(FONT_REG, 14)
 font_body_bold = load_font(FONT_BOLD, 14)
 font_title = load_font(FONT_BOLD, 18)
 font_clock = load_font(FONT_BOLD, 30)
 font_big = load_font(FONT_BOLD, 24)
+
+
+def draw_text_shadow(
+    draw, pos, text, font, fill=None, shadow=None, offset=(1, 1)
+):
+    x, y = pos
+    draw.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow or theme_shadow_color)
+    draw.text((x, y), text, font=font, fill=fill or theme_text_color)
+
 
 # ---------- Audio ----------
 AUDIO_DEVICE = "plughw:2,0"
@@ -95,11 +148,15 @@ SCREEN_HOME = "home"
 SCREEN_ALARM = "alarm"
 SCREEN_POMODORO = "pomodoro"
 SCREEN_AIR = "air"
+SCREEN_SETTINGS = "settings"
 
 current_screen = SCREEN_HOME
 
 # ---------- Home menu ----------
-home_menu_items = ["Pomodoro", "Alarm", "Air"]
+home_menu_items = ["Pomodoro", "Alarm", "Air", "Settings"]
+
+# ---------- Settings ----------
+settings_theme_index = 0
 home_menu_index = 0
 
 # ---------- Pomodoro ----------
@@ -144,6 +201,8 @@ SNOOZE_MINUTES = 10
 def load_config():
     global alarm_enabled, alarm_hour, alarm_minute
     global pomodoro_work_minutes, pomodoro_break_minutes
+    global BG_HOME, BG_ALARM, BG_POMODORO, BG_AIR
+    global current_theme
 
     if not CONFIG_PATH.exists():
         return
@@ -155,6 +214,12 @@ def load_config():
         alarm_minute = int(data.get("alarm_minute", 0))
         pomodoro_work_minutes = int(data.get("pomodoro_work_minutes", 25))
         pomodoro_break_minutes = int(data.get("pomodoro_break_minutes", 5))
+        theme = data.get("theme", THEMES[0] if THEMES else "futuristic")
+        if theme not in THEMES:
+            theme = THEMES[0] if THEMES else "futuristic"
+        current_theme = theme
+        BG_HOME, BG_ALARM, BG_POMODORO, BG_AIR = load_backgrounds(current_theme)
+        load_theme_colors(current_theme)
     except Exception:
         pass
 
@@ -166,6 +231,7 @@ def save_config():
         "alarm_minute": alarm_minute,
         "pomodoro_work_minutes": pomodoro_work_minutes,
         "pomodoro_break_minutes": pomodoro_break_minutes,
+        "theme": current_theme,
     }
     try:
         CONFIG_PATH.write_text(json.dumps(data, indent=2))
@@ -337,8 +403,17 @@ def check_alarm():
 
 
 def footer(draw, text):
-    draw.rectangle((0, 222, 319, 239), outline=None, fill="black")
-    draw.text((8, 225), text, fill="white", font=font_small)
+    w, h = device.size
+    draw.rectangle((0, h - 18, w - 1, h - 1), outline=None, fill="black")
+    draw_text_shadow(
+        draw,
+        (8, h - 15),
+        text,
+        font=font_small,
+        fill="white",
+        shadow="black",
+        offset=(1, 1),
+    )
 
 
 # ---------- Drawing ----------
@@ -353,93 +428,139 @@ def draw_home_screen():
         current_humidity = humidity_rh
         current_sensor_status = sensor_status
 
-    with canvas(device) as draw:
-        draw.text((10, 4), time_str, fill="white", font=font_clock)
-        draw.text((12, 38), date_str, fill="white", font=font_body)
+    # For backgrounds with solid colors
+    # with canvas(device) as draw:
+    #     draw.text((10, 4), time_str, fill="white", font=font_clock)
+    #     draw.text((12, 38), date_str, fill="white", font=font_body)
+    img = BG_HOME.copy()
+    draw = ImageDraw.Draw(img)
 
-        if alarm_ringing:
-            alarm_line = "Alarm: RINGING"
-        elif alarm_snooze_until is not None:
-            alarm_line = f"Alarm: Snoozed to {alarm_snooze_until.strftime('%H:%M')}"
-        else:
-            alarm_line = f"Alarm: {'On' if alarm_enabled else 'Off'} {alarm_time_string()}"
+    if alarm_ringing:
+        alarm_line = "Alarm: RINGING"
+    elif alarm_snooze_until is not None:
+        alarm_line = f"Alarm: Snoozed to {alarm_snooze_until.strftime('%H:%M')}"
+    else:
+        alarm_line = f"Alarm: {'On' if alarm_enabled else 'Off'} {alarm_time_string()}"
 
-        draw.text((10, 58), alarm_line, fill="white", font=font_body)
+    draw_text_shadow(draw, (10, 4), time_str, font_clock)
+    draw_text_shadow(draw, (12, 38), date_str, font_body)
+    draw_text_shadow(draw, (10, 58), pomodoro_state_text(), font_body_bold)
+    draw_text_shadow(draw, (120, 54), format_pomodoro_remaining(), font_big)
 
-        if pomodoro_mode == POMO_IDLE:
-            pomo_line = "Pomodoro: Idle"
-        else:
-            pomo_line = f"Pomodoro: {pomodoro_state_text()} {format_pomodoro_remaining()}"
+    if pomodoro_mode == POMO_IDLE:
+        pomo_line = "Pomodoro: Idle"
+    else:
+        pomo_line = f"Pomodoro: {pomodoro_state_text()} {format_pomodoro_remaining()}"
 
-        draw.text((10, 76), pomo_line, fill="white", font=font_body)
-        draw.text((10, 92), f"Cycles: {pomodoro_cycles_completed}", fill="white", font=font_body)
+    draw_text_shadow(draw, (10, 76), pomo_line, font_body)
+    draw_text_shadow(draw, (10, 92), f"Cycles: {pomodoro_cycles_completed}", font_body)
 
-        if current_co2 is None:
-            draw.text((10, 112), f"Air: {current_sensor_status}", fill="white", font=font_body)
-        else:
-            temp_f = c_to_f(current_temp)
-            draw.text((10, 112), f"CO2: {current_co2} ppm ({co2_status_text(current_co2)})", fill="white", font=font_body)
-            draw.text((10, 128), f"T: {temp_f:.1f} F   H: {current_humidity:.1f} %", fill="white", font=font_body)
+    if current_co2 is None:
+        draw_text_shadow(
+            draw,
+            (10, 92),
+            f"Cycles: {pomodoro_cycles_completed}",
+            font_body,
+        )
+    else:
+        temp_f = c_to_f(current_temp)
+        draw_text_shadow(
+            draw,
+            (10, 112),
+            f"CO2: {current_co2} ppm ({co2_status_text(current_co2)})",
+            font_body,
+        )
 
-        draw.text((10, 150), "Menu", fill="white", font=font_body_bold)
+        draw_text_shadow(
+            draw,
+            (10, 128),
+            f"T: {temp_f:.1f} F   H: {current_humidity:.1f} %",
+            font_body,
+        )
 
-        y = 168
-        for i, item in enumerate(home_menu_items):
-            prefix = ">" if i == home_menu_index else " "
-            draw.text((12, y), f"{prefix} {item}", fill="white", font=font_body)
-            y += 16
+        draw_text_shadow(draw, (10, 150), "Menu", font_body_bold)
 
-        footer(draw, "Select=Open  Back=Dismiss")
+    y = 168
+    for i, item in enumerate(home_menu_items):
+        prefix = ">" if i == home_menu_index else " "
+        draw_text_shadow(draw, (12, y), f"{prefix} {item}", font_body)
+        y += 16
+
+    footer(draw, "Select=Open  Back=Dismiss")
+
+    device.display(img)
 
 
 def draw_alarm_screen():
-    with canvas(device) as draw:
-        draw.text((10, 8), "Alarm", fill="white", font=font_title)
-        draw.text((10, 34), alarm_time_string(), fill="white", font=font_big)
-        draw.text((120, 38), "On" if alarm_enabled else "Off", fill="white", font=font_body_bold)
+    # For backgrounds with solid colors
+    # with canvas(device) as draw:
+    img = BG_ALARM.copy()
+    draw = ImageDraw.Draw(img)
+    draw_text_shadow(draw, (10, 8), "Alarm", font_title)
+    draw_text_shadow(draw, (10, 34), alarm_time_string(), font_big)
+    draw_text_shadow(
+        draw,
+        (120, 38),
+        "On" if alarm_enabled else "Off",
+        font_body_bold,
+    )
 
-        items = [
-            f"Enabled: {'On' if alarm_enabled else 'Off'}",
-            f"Hour: {alarm_hour:02d}",
-            f"Minute: {alarm_minute:02d}",
-            "Save & Exit",
-        ]
+    items = [
+        f"Enabled: {'On' if alarm_enabled else 'Off'}",
+        f"Hour: {alarm_hour:02d}",
+        f"Minute: {alarm_minute:02d}",
+        "Save & Exit",
+    ]
 
-        y = 78
-        for i, item in enumerate(items):
-            prefix = ">" if i == alarm_menu_index else " "
-            suffix = " *" if alarm_edit_mode and i == alarm_menu_index else ""
-            draw.text((12, y), f"{prefix} {item}{suffix}", fill="white", font=font_body)
-            y += 24
+    y = 78
+    for i, item in enumerate(items):
+        prefix = ">" if i == alarm_menu_index else " "
+        suffix = " *" if alarm_edit_mode and i == alarm_menu_index else ""
+        draw_text_shadow(draw, (12, y), f"{prefix} {item}{suffix}", font_body)
+        y += 24
 
-        footer(draw, "Rotate/Edit  Select=Toggle")
+    footer(draw, "Rotate/Edit  Select=Toggle")
+
+    device.display(img)
 
 
 def draw_pomodoro_screen():
-    with canvas(device) as draw:
-        draw.text((10, 8), "Pomodoro", fill="white", font=font_title)
-        draw.text((10, 34), pomodoro_state_text(), fill="white", font=font_body_bold)
-        draw.text((120, 30), format_pomodoro_remaining(), fill="white", font=font_big)
+    # For backgrounds with solid colors
+    # with canvas(device) as draw:
 
-        start_stop_label = "Stop" if pomodoro_running else "Start"
+    img = BG_POMODORO.copy()
+    draw = ImageDraw.Draw(img)
 
-        items = [
-            f"Work Minutes: {pomodoro_work_minutes}",
-            f"Break Minutes: {pomodoro_break_minutes}",
-            f"{start_stop_label}",
-            "Save & Exit",
-        ]
+    draw_text_shadow(draw, (10, 8), "Pomodoro", font_title)
+    draw_text_shadow(draw, (10, 34), pomodoro_state_text(), font_body_bold)
+    draw_text_shadow(draw, (120, 30), format_pomodoro_remaining(), font_big)
 
-        y = 78
-        for i, item in enumerate(items):
-            prefix = ">" if i == pomodoro_menu_index else " "
-            suffix = " *" if pomodoro_edit_mode and i == pomodoro_menu_index else ""
-            draw.text((12, y), f"{prefix} {item}{suffix}", fill="white", font=font_body)
-            y += 24
+    start_stop_label = "Stop" if pomodoro_running else "Start"
 
-        draw.text((12, 182), f"Cycles completed: {pomodoro_cycles_completed}", fill="white", font=font_body)
+    items = [
+        f"Work Minutes: {pomodoro_work_minutes}",
+        f"Break Minutes: {pomodoro_break_minutes}",
+        f"{start_stop_label}",
+        "Save & Exit",
+    ]
 
-        footer(draw, "Rotate/Edit  Select=Start")
+    y = 78
+    for i, item in enumerate(items):
+        prefix = ">" if i == pomodoro_menu_index else " "
+        suffix = " *" if pomodoro_edit_mode and i == pomodoro_menu_index else ""
+        draw_text_shadow(draw, (12, y), f"{prefix} {item}{suffix}", font_body)
+        y += 24
+
+    draw_text_shadow(
+        draw,
+        (12, 182),
+        f"Cycles completed: {pomodoro_cycles_completed}",
+        font_body,
+    )
+
+    footer(draw, "Rotate/Edit  Select=Start")
+
+    device.display(img)
 
 
 def draw_air_screen():
@@ -449,29 +570,55 @@ def draw_air_screen():
         current_humidity = humidity_rh
         current_sensor_status = sensor_status
 
-    with canvas(device) as draw:
-        draw.text((10, 8), "Air Quality", fill="white", font=font_title)
+    # For backgrounds with solid colors
+    # with canvas(device) as draw:
+    img = BG_AIR.copy()
+    draw = ImageDraw.Draw(img)
+    draw_text_shadow(draw, (10, 8), "Air Quality", font_title)
 
-        if current_co2 is None:
-            draw.text((10, 40), current_sensor_status, fill="white", font=font_big)
-        else:
-            temp_f = c_to_f(current_temp)
+    if current_co2 is None:
+        draw_text_shadow(draw, (10, 40), current_sensor_status, font_big)
+    else:
+        temp_f = c_to_f(current_temp)
 
-            draw.text((10, 38), f"{current_co2} ppm", fill="white", font=font_big)
-            draw.text((150, 46), co2_status_text(current_co2), fill="white", font=font_body_bold)
+        draw_text_shadow(draw, (10, 38), f"{current_co2} ppm", font_big)
+        draw_text_shadow(
+            draw,
+            (150, 46),
+            co2_status_text(current_co2),
+            font_body_bold,
+        )
 
-            draw.text((10, 86), "Temperature", fill="white", font=font_body_bold)
-            draw.text((10, 104), f"{temp_f:.1f} F", fill="white", font=font_big)
+        draw_text_shadow(draw, (10, 86), "Temperature", font_body_bold)
+        draw_text_shadow(draw, (10, 104), f"{temp_f:.1f} F", font_big)
 
-            draw.text((150, 86), "Humidity", fill="white", font=font_body_bold)
-            draw.text((150, 104), f"{current_humidity:.1f} %", fill="white", font=font_big)
+        draw_text_shadow(draw, (150, 86), "Humidity", font_body_bold)
+        draw_text_shadow(draw, (150, 104), f"{current_humidity:.1f} %", font_big)
 
-        draw.text((10, 150), "CO2 Guide", fill="white", font=font_body_bold)
-        draw.text((10, 168), "<800 Good", fill="white", font=font_body)
-        draw.text((10, 184), "800-1200 Moderate", fill="white", font=font_body)
-        draw.text((10, 200), ">1200 Poor", fill="white", font=font_body)
+    draw_text_shadow(draw, (10, 150), "CO2 Guide", font_body_bold)
+    draw_text_shadow(draw, (10, 168), "<800 Good", font_body)
+    draw_text_shadow(draw, (10, 184), "800-1200 Moderate", font_body)
+    draw_text_shadow(draw, (10, 200), ">1200 Poor", font_body)
 
-        footer(draw, "Back=Home")
+    footer(draw, "Back=Home")
+    device.display(img)
+
+
+def draw_settings_screen():
+    img = BG_HOME.copy()
+    draw = ImageDraw.Draw(img)
+    draw_text_shadow(draw, (10, 8), "Settings", font_title)
+    draw_text_shadow(draw, (10, 38), "Theme", font_body_bold)
+
+    y = 70
+    for i, name in enumerate(THEMES):
+        prefix = ">" if i == settings_theme_index else " "
+        active = " [active]" if name == current_theme else ""
+        draw_text_shadow(draw, (12, y), f"{prefix} {name}{active}", font_body)
+        y += 20
+
+    footer(draw, "Rotate=Sel  Btn=Apply  Back=Exit")
+    device.display(img)
 
 
 def draw_screen():
@@ -483,6 +630,8 @@ def draw_screen():
         draw_pomodoro_screen()
     elif current_screen == SCREEN_AIR:
         draw_air_screen()
+    elif current_screen == SCREEN_SETTINGS:
+        draw_settings_screen()
 
 
 # ---------- Input handlers ----------
@@ -533,8 +682,22 @@ def handle_encoder_pomodoro():
         elif pomodoro_menu_index == 1:
             pomodoro_break_minutes = max(1, min(60, pomodoro_break_minutes + delta))
     else:
-        pomodoro_menu_index = clamp_index(pomodoro_menu_index + delta, len(pomodoro_menu_items))
+        pomodoro_menu_index = clamp_index(
+            pomodoro_menu_index + delta, len(pomodoro_menu_items)
+        )
 
+    last_steps = steps
+
+
+def handle_encoder_settings():
+    global settings_theme_index, last_steps
+
+    steps = enc.steps
+    if steps == last_steps:
+        return
+
+    delta = 1 if steps > last_steps else -1
+    settings_theme_index = clamp_index(settings_theme_index + delta, len(THEMES))
     last_steps = steps
 
 
@@ -543,6 +706,8 @@ def handle_buttons():
     global current_screen, alarm_edit_mode, alarm_enabled
     global alarm_menu_index
     global pomodoro_menu_index, pomodoro_edit_mode
+    global current_theme, BG_HOME, BG_ALARM, BG_POMODORO, BG_AIR
+    global settings_theme_index
 
     select_now = btn_select.is_pressed
     back_now = btn_back.is_pressed
@@ -571,6 +736,8 @@ def handle_buttons():
                 current_screen = SCREEN_HOME
         elif current_screen == SCREEN_AIR:
             current_screen = SCREEN_HOME
+        elif current_screen == SCREEN_SETTINGS:
+            current_screen = SCREEN_HOME
 
     if select_now and not last_select:
         if current_screen == SCREEN_HOME:
@@ -586,6 +753,9 @@ def handle_buttons():
                 alarm_edit_mode = False
             elif selected_item == "Air":
                 current_screen = SCREEN_AIR
+            elif selected_item == "Settings":
+                settings_theme_index = THEMES.index(current_theme) if current_theme in THEMES else 0
+                current_screen = SCREEN_SETTINGS
 
         elif current_screen == SCREEN_ALARM:
             if alarm_menu_index == 0:
@@ -607,6 +777,13 @@ def handle_buttons():
                 pomodoro_edit_mode = False
                 current_screen = SCREEN_HOME
 
+        elif current_screen == SCREEN_SETTINGS:
+            new_theme = THEMES[settings_theme_index]
+            current_theme = new_theme
+            BG_HOME, BG_ALARM, BG_POMODORO, BG_AIR = load_backgrounds(current_theme)
+            load_theme_colors(current_theme)
+            save_config()
+
     last_select = select_now
     last_back = back_now
     last_snooze = snooze_now
@@ -619,6 +796,8 @@ def handle_inputs():
         handle_encoder_alarm()
     elif current_screen == SCREEN_POMODORO:
         handle_encoder_pomodoro()
+    elif current_screen == SCREEN_SETTINGS:
+        handle_encoder_settings()
 
     handle_buttons()
 

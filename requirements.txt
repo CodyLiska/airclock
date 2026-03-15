@@ -1,6 +1,9 @@
-luma.lcd
-luma.core
+# Pi dependencies (hardware)
 gpiozero
-Pillow
+luma.lcd
 sensirion-i2c-driver
 sensirion-i2c-scd
+
+# PC preview only
+pygame
+pillow
