@@ -1,6 +1,6 @@
 import board
 import digitalio
-from adafruit_rgb_display import ili9486
+from adafruit_rgb_display import hx8357
 from PIL import Image
 
 backlight = digitalio.DigitalInOut(board.D26)
@@ -13,7 +13,7 @@ reset_pin = digitalio.DigitalInOut(board.D18)
 
 spi = board.SPI()
 
-disp = ili9486.ILI9486(
+disp = hx8357.HX8357(
     spi,
     cs=cs_pin,
     dc=dc_pin,
