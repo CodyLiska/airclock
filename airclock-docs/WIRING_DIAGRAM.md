@@ -37,15 +37,21 @@ The AirClock project uses the 40‑pin GPIO header on the Raspberry Pi 3 Model B
 | GPIO17 | Pin 11 | Encoder A | Rotary Encoder |
 | GPIO27 | Pin 13 | Encoder B | Rotary Encoder |
 | GPIO22 | Pin 15 | Encoder Button | Rotary Encoder |
-| GPIO23 | Pin 16 | Back Button | Push Button |
-| GPIO18 | Pin 12 | Snooze Button | Push Button |
+| GPIO23 | Pin 16 | Back Button (BTN1) | Push Button |
+| GPIO24 | Pin 18 | Snooze/Mode Button (BTN2) | Push Button |
 | GPIO25 | Pin 22 | LCD DC | LCD Display |
-| GPIO24 | Pin 18 | LCD RESET | LCD Display |
+| GPIO18 | Pin 12 | LCD RESET | LCD Display |
+| GPIO26 | Pin 37 | LCD Backlight | LCD Display |
 | GPIO10 | Pin 19 | SPI MOSI | LCD Display |
+| GPIO9 | Pin 21 | SPI MISO | LCD Display |
 | GPIO11 | Pin 23 | SPI Clock | LCD Display |
 | GPIO8 | Pin 24 | SPI CE0 | LCD Display |
 | 3.3V | Pin 1/17 | Power | Sensors / LCD |
 | GND | Multiple | Ground | All devices |
+
+Note: BTN1/BTN2 → GPIO23/GPIO24 assignment was swapped during a 2026
+perfboard redesign to reduce wire crossings — physically confirm which
+switch you're calling "back" vs "snooze" matches your intent.
 
 ---
 
@@ -78,11 +84,12 @@ Display: **2.8" SPI TFT (ILI9341)**
 | VCC | 3.3V |
 | GND | GND |
 | CS | GPIO8 (CE0) |
-| RESET | GPIO24 |
+| RESET | GPIO18 |
 | DC | GPIO25 |
 | MOSI | GPIO10 |
+| MISO | GPIO9 |
 | SCK | GPIO11 |
-| LED | 3.3V (always on) |
+| LED | GPIO26 (software-controlled, must be driven high) |
 
 ---
 
@@ -119,7 +126,7 @@ Actions:
 
 | Button Leg | Connection |
 |------|------|
-| Leg 1 | GPIO18 |
+| Leg 1 | GPIO24 |
 | Leg 2 | GND |
 
 Internal pull‑up resistors are enabled in software.

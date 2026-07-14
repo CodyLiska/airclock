@@ -7,7 +7,7 @@ select = Button(22, pull_up=True, bounce_time=0.08)
 
 # Extra buttons
 back = Button(23, pull_up=True, bounce_time=0.08)
-snooze = Button(5, pull_up=True, bounce_time=0.08)
+snooze = Button(24, pull_up=True, bounce_time=0.08)
 
 last_steps = enc.steps
 last_select = False

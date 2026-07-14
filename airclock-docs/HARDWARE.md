@@ -67,11 +67,12 @@ SPI connection to Raspberry Pi.
 | VCC | 3.3V |
 | GND | GND |
 | CS | CE0 |
-| RESET | GPIO24 |
+| RESET | GPIO18 |
 | DC | GPIO25 |
 | MOSI | GPIO10 |
+| MISO | GPIO9 |
 | SCK | GPIO11 |
-| LED | 3.3V (always-on backlight) |
+| LED | GPIO26 (software-controlled — driven high at startup, not tied to always-on 3.3V) |
 
 ---
 
@@ -177,11 +178,16 @@ Snoozes alarm or toggles Pomodoro state.
 
 | Button | Raspberry Pi |
 |---|---|
-| Button 1 | GPIO23 |
-| Button 2 | GPIO18 |
+| Button 1 (Back) | GPIO23 |
+| Button 2 (Snooze) | GPIO24 |
 | Other leg | GND |
 
 Buttons use internal pull-up resistors.
+
+Note: this BTN1/BTN2 → GPIO assignment was swapped during a 2026 perfboard
+redesign to reduce wire crossings on the perfboard. Physically confirm which
+switch is wired to which GPIO before assuming "Back" and "Snooze" match your
+expectation.
 
 ---
 

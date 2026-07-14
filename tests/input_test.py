@@ -7,7 +7,7 @@ encoder.when_rotated_counter_clockwise = lambda: print("Counter Clockwise")
 
 select = Button(22)
 back = Button(23)
-snooze = Button(5)
+snooze = Button(24)
 
 select.when_pressed = lambda: print("SELECT pressed")
 back.when_pressed = lambda: print("BACK pressed")

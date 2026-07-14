@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Thread, Lock
 
-from gpiozero import RotaryEncoder, Button
+from gpiozero import RotaryEncoder, Button, DigitalOutputDevice
 from luma.core.interface.serial import spi
 from luma.lcd.device import ili9341
 from PIL import Image, ImageDraw, ImageFont
@@ -48,7 +48,11 @@ def load_theme_colors(theme):
             pass
 
 # ---------- Display ----------
-serial = spi(port=0, device=0, gpio_DC=25, gpio_RST=24)
+# Backlight is wired to GPIO26 (not tied to always-on 3.3V), so it must be
+# driven high in software or the screen stays dark.
+backlight = DigitalOutputDevice(26, initial_value=True)
+
+serial = spi(port=0, device=0, gpio_DC=25, gpio_RST=18)
 device = ili9341(serial, width=320, height=240, rotate=1)
 
 
@@ -136,7 +140,7 @@ def stop_alarm_sound():
 enc = RotaryEncoder(a=17, b=27, max_steps=0)
 btn_select = Button(22, pull_up=True, bounce_time=0.08)
 btn_back = Button(23, pull_up=True, bounce_time=0.08)
-btn_snooze = Button(5, pull_up=True, bounce_time=0.08)
+btn_snooze = Button(24, pull_up=True, bounce_time=0.08)
 
 last_steps = enc.steps
 last_select = False
