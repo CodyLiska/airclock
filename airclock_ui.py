@@ -18,8 +18,9 @@ from sensirion_i2c_scd import Scd4xI2cDevice
 # from luma.core.render import canvas
 
 # ---------- Paths ----------
-BASE_PATH   = Path(os.environ.get("AIRCLOCK_BASE", Path(__file__).parent))
+BASE_PATH = Path(os.environ.get("AIRCLOCK_BASE", Path(__file__).parent))
 CONFIG_PATH = BASE_PATH / "config.json"
+
 
 # ---------- Themes ----------
 def _discover_themes():
@@ -27,6 +28,7 @@ def _discover_themes():
     if bg_dir.exists():
         return sorted(d.name for d in bg_dir.iterdir() if d.is_dir())
     return ["futuristic"]
+
 
 THEMES = _discover_themes()
 current_theme = THEMES[0] if THEMES else "futuristic"
@@ -47,12 +49,13 @@ def load_theme_colors(theme):
         except Exception:
             pass
 
+
 # ---------- Display ----------
 # Backlight is wired to GPIO26 (not tied to always-on 3.3V), so it must be
 # driven high in software or the screen stays dark.
 backlight = DigitalOutputDevice(26, initial_value=True)
 
-serial = spi(port=0, device=0, gpio_DC=25, gpio_RST=18, bus_speed_hz=4000000)
+serial = spi(port=0, device=0, gpio_DC=25, gpio_RST=18, bus_speed_hz=24000000)
 device = ili9341(serial, width=320, height=240, rotate=1)
 
 
@@ -69,12 +72,19 @@ FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 def load_backgrounds(theme="futuristic"):
     bg_dir = BASE_PATH / "background" / theme
+
     def _open(name):
         img = Image.open(bg_dir / name).convert("RGB")
         if img.size != device.size:
             img = img.resize(device.size, Image.LANCZOS)
         return img
-    return _open("home.png"), _open("alarm.png"), _open("pomodoro.png"), _open("air.png")
+
+    return (
+        _open("home.png"),
+        _open("alarm.png"),
+        _open("pomodoro.png"),
+        _open("air.png"),
+    )
 
 
 BG_HOME, BG_ALARM, BG_POMODORO, BG_AIR = load_backgrounds()
@@ -88,11 +98,14 @@ font_clock = load_font(FONT_BOLD, 30)
 font_big = load_font(FONT_BOLD, 24)
 
 
-def draw_text_shadow(
-    draw, pos, text, font, fill=None, shadow=None, offset=(1, 1)
-):
+def draw_text_shadow(draw, pos, text, font, fill=None, shadow=None, offset=(1, 1)):
     x, y = pos
-    draw.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow or theme_shadow_color)
+    draw.text(
+        (x + offset[0], y + offset[1]),
+        text,
+        font=font,
+        fill=shadow or theme_shadow_color,
+    )
     draw.text((x, y), text, font=font, fill=fill or theme_text_color)
 
 
@@ -758,7 +771,9 @@ def handle_buttons():
             elif selected_item == "Air":
                 current_screen = SCREEN_AIR
             elif selected_item == "Settings":
-                settings_theme_index = THEMES.index(current_theme) if current_theme in THEMES else 0
+                settings_theme_index = (
+                    THEMES.index(current_theme) if current_theme in THEMES else 0
+                )
                 current_screen = SCREEN_SETTINGS
 
         elif current_screen == SCREEN_ALARM:
