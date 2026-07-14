@@ -7,7 +7,7 @@ from PIL import ImageFont
 # Backlight is wired to GPIO26, not always-on 3.3V — must be driven high.
 backlight = DigitalOutputDevice(26, initial_value=True)
 
-serial = spi(port=0, device=0, gpio_DC=25, gpio_RST=18)
+serial = spi(port=0, device=0, gpio_DC=25, gpio_RST=18, bus_speed_hz=4000000)
 
 device = ili9341(serial, width=320, height=240, rotate=1)
 
