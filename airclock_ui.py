@@ -150,7 +150,7 @@ def stop_alarm_sound():
 
 
 # ---------- Inputs ----------
-enc = RotaryEncoder(a=17, b=27, max_steps=0)
+enc = RotaryEncoder(a=17, b=27, max_steps=0, pull_up=True)
 btn_select = Button(22, pull_up=True, bounce_time=0.08)
 btn_back = Button(23, pull_up=True, bounce_time=0.08)
 btn_snooze = Button(24, pull_up=True, bounce_time=0.08)
